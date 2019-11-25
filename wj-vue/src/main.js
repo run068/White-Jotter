@@ -21,11 +21,17 @@ Vue.use(mavonEditor)
 
 // 如果前端没有登录信息则直接拦截，如果有则判断后端是否正常登录（防止构造参数绕过）
 router.beforeEach((to, from, next) => {
+    if (store.state.user.username && to.path.startsWith('/admin')) {
+      axios.get('/authentication').then(resp => {
+        initAdminMenu(router, store)
+      })
+    }
     if (to.meta.requireAuth) {
       if (store.state.user.username) {
         axios.get('/authentication').then(resp => {
           if (resp) next()
         })
+        next()
       } else {
         next({
           path: 'login',
@@ -38,7 +44,7 @@ router.beforeEach((to, from, next) => {
   }
 )
 
-// http request拦截器，为请求加上 token，测试用，没有必要
+// http request拦截器，为请求加上 token，测试用
 /* axios.interceptors.request.use(
   config => {
     // 输出当前状态下的 token
@@ -66,13 +72,57 @@ axios.interceptors.response.use(
     console.log(error.response)
     if (error) {
       router.replace({
-        path: 'login',
-        query: {redirect: router.currentRoute.fullPath}
+        path: 'login'
+        // query: {redirect: router.currentRoute.fullPath}
       })
     }
     // 返回接口返回的错误信息
     return Promise.reject(error.response.data)
   })
+
+const initAdminMenu = (router, store) => {
+  if (store.state.adminMenus.length > 0) {
+    return
+  }
+  axios.get('/menu').then(resp => {
+    if (resp && resp.status === 200) {
+      var fmtRoutes = formatRoutes(resp.data)
+      router.addRoutes(fmtRoutes)
+      store.commit('initAdminMenu', fmtRoutes)
+    }
+  })
+}
+
+const formatRoutes = (routes) => {
+  let fmtRoutes = []
+  routes.forEach(route => {
+    if (route.children) {
+      route.children = formatRoutes(route.children)
+    }
+
+    let fmtRoute = {
+      path: route.path,
+      component: resolve => {
+        if (route.component.startsWith('Admin')) {
+          require(['./components/admin/' + route.component + '.vue'], resolve)
+        } else if (route.component.startsWith('User')) {
+          require(['./components/admin/user/' + route.component + '.vue'], resolve)
+        } else if (route.component.startsWith('Library')) {
+          // require(['./library/' + component + '.vue'], resolve)
+        }
+      },
+      name: route.name,
+      nameZh: route.nameZh,
+      meta: {
+        requireAuth: true
+      },
+      iconCls: route.iconCls,
+      children: route.children
+    }
+    fmtRoutes.push(fmtRoute)
+  })
+  return fmtRoutes
+}
 
 /* eslint-disable no-new */
 new Vue({
